@@ -913,6 +913,16 @@ void ConfigUtils::initUnsetPropertiesWithDefaults(Config& config)
     INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions, deprecatedI2cSCLPin, -1);
     INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions, deprecatedI2cSpeed, WII_EXTENSION_I2C_SPEED);
 
+    // Nunchuk defaults for both Wii ports (only applied when nothing is saved yet)
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers.nunchuk, buttonC, WII_EXTENSION_PORT1_NUNCHUK_BUTTON_C);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers.nunchuk, buttonZ, WII_EXTENSION_PORT1_NUNCHUK_BUTTON_Z);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers.nunchuk.stick.x, axisType, WII_EXTENSION_PORT1_NUNCHUK_STICK_X);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers.nunchuk.stick.y, axisType, WII_EXTENSION_PORT1_NUNCHUK_STICK_Y);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers2.nunchuk, buttonC, WII_EXTENSION_PORT2_NUNCHUK_BUTTON_C);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers2.nunchuk, buttonZ, WII_EXTENSION_PORT2_NUNCHUK_BUTTON_Z);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers2.nunchuk.stick.x, axisType, WII_EXTENSION_PORT2_NUNCHUK_STICK_X);
+    INIT_UNSET_PROPERTY(config.addonOptions.wiiOptions.controllers2.nunchuk.stick.y, axisType, WII_EXTENSION_PORT2_NUNCHUK_STICK_Y);
+
     // addonOptions.snesOptions
     INIT_UNSET_PROPERTY(config.addonOptions.snesOptions, enabled, !!SNES_PAD_ENABLED);
     INIT_UNSET_PROPERTY(config.addonOptions.snesOptions, clockPin, SNES_PAD_CLOCK_PIN);

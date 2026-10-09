@@ -182,6 +182,13 @@ const WII_EXTENSION_CONTROLS = [
 	},
 ];
 
+// Each port maps to a fixed I2C block on the firmware side.
+// prefix is prepended to every mapping key sent to / read from the API.
+const WII_PORTS = [
+	{ id: 'Port1', prefix: '', label: 'port-1' },
+	{ id: 'Port2', prefix: 'port2.', label: 'port-2' },
+];
+
 const WII_JOYSTICK_MODES = [
 	{ label: 'None', value: 0, options: { x: 0, y: 0 } },
 	{ label: 'Left Analog', value: 1, options: { x: 1, y: 2 } },
@@ -322,7 +329,7 @@ const Wii = ({
 		handleChange(e);
 	};
 
-	const getJoystickModeValue = (controlObj, analogObj) => {
+	const getJoystickModeValue = (controlKey, analogObj) => {
 		let joystickMode = 0;
 		let foundOpt = false;
 		WII_JOYSTICK_MODES.forEach((mode) => {
@@ -331,12 +338,7 @@ const Wii = ({
 					if (!foundOpt) {
 						let modeEntry = mode.options[opt];
 						let entryID =
-							controlObj.id.toLowerCase() +
-							'.analog' +
-							analogObj.id +
-							'.' +
-							opt +
-							'.axisType';
+							controlKey + '.analog' + analogObj.id + '.' + opt + '.axisType';
 						let entry = wiiControls[entryID];
 						if (wiiControls[entryID] == modeEntry) {
 							foundOpt = true;
@@ -374,6 +376,9 @@ const Wii = ({
 					</div>
 				</Trans>
 				<div className="alert alert-info" role="alert">
+					{t('WiiAddon:port-note')}
+				</div>
+				<div className="alert alert-info" role="alert">
 					The SDA and SCL pins and Speed are configured in{' '}
 					<a href="../peripheral-mapping" className="alert-link">
 						Peripheral Mapping
@@ -381,163 +386,192 @@ const Wii = ({
 				</div>
 				<Row className="mb-3">
 					<Tabs
-						defaultActiveKey={`wii${WII_EXTENSION_CONTROLS[0].id}Config`}
-						id="wiiControllerConfig"
+						defaultActiveKey={`wii${WII_PORTS[0].id}`}
+						id="wiiPortConfig"
 						className="mb-3"
-						fill
 					>
-						{WII_EXTENSION_CONTROLS.map((controlObj, controlID) => (
+						{WII_PORTS.map((port) => (
 							<Tab
-								key={`wii-addon-controller-${controlID}`}
-								eventKey={`wii${controlObj.id}Config`}
-								title={t(`WiiAddon:controller-${controlObj.id.toLowerCase()}`)}
+								key={`wii-addon-port-${port.id}`}
+								eventKey={`wii${port.id}`}
+								title={t(`WiiAddon:${port.label}`)}
 							>
 								<Row className="mb-3">
-									{controlObj.inputs.digital?.length > 0 ? (
-										<h1>{t('WiiAddon:section-digital')}</h1>
-									) : (
-										''
-									)}
-									{controlObj.inputs.digital?.map((buttonObj, buttonID) => (
-										<div
-											className="col-sm-12 col-md-6 col-lg-2 mb-2"
-											key={`wiiExtensionController${controlObj.id}Digital${buttonID}`}
-										>
-											<label
-												className="form-label"
-												htmlFor={`wiiExtensionController${controlObj.id}Button${buttonObj.id}`}
-											>
-												{t(
-													`WiiAddon:controller-button-${buttonObj.id.toLowerCase()}`,
-												)}
-											</label>
-											<select
-												className="form-select-sm form-control wii-buttons"
-												controlid={`${controlObj.id.toLowerCase()}`}
-												buttonid={`${buttonObj.id}`}
-												id={`wiiExtensionController${controlObj.id}Button${buttonObj.id}`}
-												value={
-													wiiControls[
-														controlObj.id.toLowerCase() +
-															'.button' +
-															buttonObj.id
-													]
-												}
-												onChange={(e) =>
-													setWiiControls((controls) => ({
-														...controls,
-														[`${controlObj.id.toLowerCase()}.button${
-															buttonObj.id
-														}`]: e.target.value,
-													}))
-												}
-											>
-												{BUTTON_MASKS_OPTIONS.map((o, i) => (
-													<option
-														key={`wiiExtensionController${controlObj.id}Button${buttonObj.id}-option-${i}`}
-														value={o.value}
-													>
-														{CURRENT_BUTTONS[o.label]}
-													</option>
-												))}
-											</select>
-										</div>
-									))}
+									<Tabs
+										defaultActiveKey={`wii${port.id}${WII_EXTENSION_CONTROLS[0].id}Config`}
+										id={`wiiControllerConfig${port.id}`}
+										className="mb-3"
+										fill
+									>
+										{WII_EXTENSION_CONTROLS.map((controlObj, controlID) => {
+											const controlKey =
+												port.prefix + controlObj.id.toLowerCase();
+											const idBase = `wiiExtension${port.id}Controller${controlObj.id}`;
+											return (
+												<Tab
+													key={`wii-addon-${port.id}-controller-${controlID}`}
+													eventKey={`wii${port.id}${controlObj.id}Config`}
+													title={t(
+														`WiiAddon:controller-${controlObj.id.toLowerCase()}`,
+													)}
+												>
+													<Row className="mb-3">
+														{controlObj.inputs.digital?.length > 0 ? (
+															<h1>{t('WiiAddon:section-digital')}</h1>
+														) : (
+															''
+														)}
+														{controlObj.inputs.digital?.map(
+															(buttonObj, buttonID) => (
+																<div
+																	className="col-sm-12 col-md-6 col-lg-2 mb-2"
+																	key={`${idBase}Digital${buttonID}`}
+																>
+																	<label
+																		className="form-label"
+																		htmlFor={`${idBase}Button${buttonObj.id}`}
+																	>
+																		{t(
+																			`WiiAddon:controller-button-${buttonObj.id.toLowerCase()}`,
+																		)}
+																	</label>
+																	<select
+																		className="form-select-sm form-control wii-buttons"
+																		controlid={controlKey}
+																		buttonid={`${buttonObj.id}`}
+																		id={`${idBase}Button${buttonObj.id}`}
+																		value={
+																			wiiControls[
+																				controlKey + '.button' + buttonObj.id
+																			]
+																		}
+																		onChange={(e) =>
+																			setWiiControls((controls) => ({
+																				...controls,
+																				[`${controlKey}.button${buttonObj.id}`]:
+																					e.target.value,
+																			}))
+																		}
+																	>
+																		{BUTTON_MASKS_OPTIONS.map((o, i) => (
+																			<option
+																				key={`${idBase}Button${buttonObj.id}-option-${i}`}
+																				value={o.value}
+																			>
+																				{CURRENT_BUTTONS[o.label]}
+																			</option>
+																		))}
+																	</select>
+																</div>
+															),
+														)}
 
-									{controlObj.inputs.analog?.length > 0 ? (
-										<h1>{t('WiiAddon:section-analog')}</h1>
-									) : (
-										''
-									)}
-									{controlObj.inputs.analog?.map((analogObj, analogID) => (
-										<div className="row" key={`analog-input-${analogID}`}>
-											<div
-												className="col-sm-1 mb-2"
-												key={`wiiExtensionController${controlObj.id}Analog${analogID}`}
-											>
-												{t(
-													`WiiAddon:controller-analog-${analogObj.id.toLowerCase()}`,
-												)}
-											</div>
-											<div
-												className="col-sm-11 mb-2"
-												key={`wiiExtensionController${controlObj.id}Analog${analogID}Options`}
-											>
-												<div className="col-sm-12 col-md-6 col-lg-2 mb-2">
-													{analogObj.axes?.length == 1 && (
-														<div className="row">
-															<select
-																className="form-select-sm form-control wii-analogs"
-																controlid={`${controlObj.id.toLowerCase()}`}
-																analogid={`${analogObj.id}`}
-																axisid={`${analogObj.axes[0].axis}`}
-																axiscount={analogObj.axes?.length}
-																id={`wiiExtensionController${controlObj.id}Analog${analogObj.id}`}
-																value={
-																	wiiControls[
-																		controlObj.id.toLowerCase() +
-																			'.analog' +
-																			analogObj.id +
-																			'.axisType'
-																	]
-																}
-																onChange={(e) =>
-																	setWiiAnalogEntry(
-																		controlObj.id,
-																		analogObj.id,
-																		analogObj.axes?.length,
-																		e,
-																	)
-																}
-															>
-																{ANALOG_SINGLE_AXIS_MODES.map((o, i) => (
-																	<option
-																		key={`wiiSingleAxisMode${controlObj.id}${analogID}${i}`}
-																		value={o.value}
+														{controlObj.inputs.analog?.length > 0 ? (
+															<h1>{t('WiiAddon:section-analog')}</h1>
+														) : (
+															''
+														)}
+														{controlObj.inputs.analog?.map(
+															(analogObj, analogID) => (
+																<div
+																	className="row"
+																	key={`analog-input-${analogID}`}
+																>
+																	<div
+																		className="col-sm-1 mb-2"
+																		key={`${idBase}Analog${analogID}`}
 																	>
-																		{o.label}
-																	</option>
-																))}
-															</select>
-														</div>
-													)}
-													{analogObj.axes?.length == 2 && (
-														<div className="row">
-															<select
-																className="form-select-sm form-control wii-analogs"
-																controlid={`${controlObj.id.toLowerCase()}`}
-																analogid={`${analogObj.id}`}
-																axisid={`${analogObj.axes[0].axis}`}
-																axiscount={analogObj.axes?.length}
-																id={`wiiExtensionController${controlObj.id}Analog${analogObj.id}`}
-																value={getJoystickModeValue(
-																	controlObj,
-																	analogObj,
-																)}
-																onChange={(e) =>
-																	setWiiAnalogEntry(
-																		controlObj.id,
-																		analogObj.id,
-																		analogObj.axes?.length,
-																		e,
-																	)
-																}
-															>
-																{WII_JOYSTICK_MODES.map((o, i) => (
-																	<option
-																		key={`wiiJoystickMode${controlObj.id}${analogID}${i}`}
-																		value={o.value}
+																		{t(
+																			`WiiAddon:controller-analog-${analogObj.id.toLowerCase()}`,
+																		)}
+																	</div>
+																	<div
+																		className="col-sm-11 mb-2"
+																		key={`${idBase}Analog${analogID}Options`}
 																	>
-																		{o.label}
-																	</option>
-																))}
-															</select>
-														</div>
-													)}
-												</div>
-											</div>
-										</div>
-									))}
+																		<div className="col-sm-12 col-md-6 col-lg-2 mb-2">
+																			{analogObj.axes?.length == 1 && (
+																				<div className="row">
+																					<select
+																						className="form-select-sm form-control wii-analogs"
+																						controlid={controlKey}
+																						analogid={`${analogObj.id}`}
+																						axisid={`${analogObj.axes[0].axis}`}
+																						axiscount={analogObj.axes?.length}
+																						id={`${idBase}Analog${analogObj.id}`}
+																						value={
+																							wiiControls[
+																								controlKey +
+																									'.analog' +
+																									analogObj.id +
+																									'.axisType'
+																							]
+																						}
+																						onChange={(e) =>
+																							setWiiAnalogEntry(
+																								controlKey,
+																								analogObj.id,
+																								analogObj.axes?.length,
+																								e,
+																							)
+																						}
+																					>
+																						{ANALOG_SINGLE_AXIS_MODES.map(
+																							(o, i) => (
+																								<option
+																									key={`wiiSingleAxisMode${port.id}${controlObj.id}${analogID}${i}`}
+																									value={o.value}
+																								>
+																									{o.label}
+																								</option>
+																							),
+																						)}
+																					</select>
+																				</div>
+																			)}
+																			{analogObj.axes?.length == 2 && (
+																				<div className="row">
+																					<select
+																						className="form-select-sm form-control wii-analogs"
+																						controlid={controlKey}
+																						analogid={`${analogObj.id}`}
+																						axisid={`${analogObj.axes[0].axis}`}
+																						axiscount={analogObj.axes?.length}
+																						id={`${idBase}Analog${analogObj.id}`}
+																						value={getJoystickModeValue(
+																							controlKey,
+																							analogObj,
+																						)}
+																						onChange={(e) =>
+																							setWiiAnalogEntry(
+																								controlKey,
+																								analogObj.id,
+																								analogObj.axes?.length,
+																								e,
+																							)
+																						}
+																					>
+																						{WII_JOYSTICK_MODES.map((o, i) => (
+																							<option
+																								key={`wiiJoystickMode${port.id}${controlObj.id}${analogID}${i}`}
+																								value={o.value}
+																							>
+																								{o.label}
+																							</option>
+																						))}
+																					</select>
+																				</div>
+																			)}
+																		</div>
+																	</div>
+																</div>
+															),
+														)}
+													</Row>
+												</Tab>
+											);
+										})}
+									</Tabs>
 								</Row>
 							</Tab>
 						))}

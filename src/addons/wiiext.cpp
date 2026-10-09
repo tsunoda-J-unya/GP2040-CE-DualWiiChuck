@@ -5,25 +5,42 @@
 #include "helper.h"
 #include "config.pb.h"
 
+int8_t WiiExtensionInput::motionOwnerPort = -1;
+uint8_t WiiExtensionInput::activePortCount = 0;
+
 bool WiiExtensionInput::available() {
     const WiiOptions& options = Storage::getInstance().getAddonOptions().wiiOptions;
-    if (options.enabled) {
-        // addon is enabled. let's scan available blocks.
-        wii = new WiiExtensionDevice();
-        PeripheralI2CScanResult result = PeripheralManager::getInstance().scanForI2CDevice(wii->getDeviceAddresses());
-        if (result.address > -1) {
-            wii->setAddress(result.address);
-            wii->setI2C(PeripheralManager::getInstance().getI2C(result.block));
-            return true;
-        } else {
-            delete wii;
-        }
+    if (!options.enabled) return false;
+
+    // Bind this port to a fixed I2C block based on configuration only.
+    // Detection order is never used, so ports cannot swap roles.
+    PeripheralManager& pm = PeripheralManager::getInstance();
+    const bool block0 = pm.isI2CEnabled(0);
+    const bool block1 = pm.isI2CEnabled(1);
+
+    int8_t block = -1;
+    if (portIndex == 0) {
+        if (block0) block = 0;
+        else if (block1) block = 1;
+    } else if (portIndex == 1) {
+        if (block0 && block1) block = 1;
     }
-    return false;
+
+    if (block < 0) return false;
+
+    // The port stays active even if nothing is plugged in yet, so a controller
+    // connected after boot (or re-connected) is picked up by the retry logic.
+    i2cBlock = block;
+    activePortCount++;
+    wii = new WiiExtensionDevice();
+    wii->setAddress(WII_EXTENSION_I2C_ADDR);
+    wii->setI2C(pm.getI2C(i2cBlock));
+    return true;
 }
 
 void WiiExtensionInput::setup() {
     nextTimer = getMillis();
+    nextRetry = getMillis() + WII_EXTENSION_RETRY_MS;
 
 #if WII_EXTENSION_DEBUG==true
     stdio_init_all();
@@ -48,15 +65,31 @@ void WiiExtensionInput::setup() {
 }
 
 void WiiExtensionInput::process() {
-    if (nextTimer < getMillis()) {
+    // Re-probe an empty or failed port periodically. poll() only retries once
+    // after a failed read, so without this a controller that was missing at boot
+    // or unplugged and re-plugged would never be picked up again.
+    if (!wii->isReady && (getMillis() >= nextRetry)) {
+        wii->begin();
+        wii->start();
+        nextRetry = getMillis() + WII_EXTENSION_RETRY_MS;
+    }
+
+    // Each poll blocks for roughly 0.8ms (I2C transfer plus fixed delays).
+    // With two ports active they take turns on alternating milliseconds, so the
+    // per-cycle cost stays the same as a single port (each port polls at ~500Hz).
+    const uint32_t now = getMillis();
+    const bool isMyTurn = (activePortCount < 2) || ((now % activePortCount) == portIndex);
+    if ((now != lastPollMs) && isMyTurn) {
         wii->poll();
 
         update();
-              
-        nextTimer = getMillis() + uIntervalMS;
+
+        lastPollMs = now;
     }
 
-    if (currentConfig != NULL) {
+    if (currentConfig == NULL) {
+        releaseMotionState();
+    } else {
         queueAnalogChange(WiiAnalogs::WII_ANALOG_LEFT_X, leftX, lastLeftX);
         queueAnalogChange(WiiAnalogs::WII_ANALOG_LEFT_Y, leftY, lastLeftY);
         queueAnalogChange(WiiAnalogs::WII_ANALOG_RIGHT_X, rightX, lastRightX);
@@ -288,86 +321,88 @@ void WiiExtensionInput::setControllerAnalog(uint16_t controllerID, uint16_t anal
 
 void WiiExtensionInput::reloadConfig() {
     const WiiOptions& wiiOptions = Storage::getInstance().getAddonOptions().wiiOptions;
+    // Port 1 uses the original mapping set, Port 2 uses its own set
+    const WiiOptions_ControllerOptions& controllers = (portIndex == 1) ? wiiOptions.controllers2 : wiiOptions.controllers;
 
     // digital mapping
-    setControllerButton(WII_EXTENSION_NUNCHUCK, WiiButtons::WII_BUTTON_C, wiiOptions.controllers.nunchuk.buttonC);
-    setControllerButton(WII_EXTENSION_NUNCHUCK, WiiButtons::WII_BUTTON_Z, wiiOptions.controllers.nunchuk.buttonZ);
+    setControllerButton(WII_EXTENSION_NUNCHUCK, WiiButtons::WII_BUTTON_C, controllers.nunchuk.buttonC);
+    setControllerButton(WII_EXTENSION_NUNCHUCK, WiiButtons::WII_BUTTON_Z, controllers.nunchuk.buttonZ);
     
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_A, wiiOptions.controllers.classic.buttonA);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_B, wiiOptions.controllers.classic.buttonB);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_X, wiiOptions.controllers.classic.buttonX);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_Y, wiiOptions.controllers.classic.buttonY);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_L, wiiOptions.controllers.classic.buttonL);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_ZL, wiiOptions.controllers.classic.buttonZL);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_R, wiiOptions.controllers.classic.buttonR);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_ZR, wiiOptions.controllers.classic.buttonZR);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_MINUS, wiiOptions.controllers.classic.buttonMinus);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_PLUS, wiiOptions.controllers.classic.buttonPlus);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_HOME, wiiOptions.controllers.classic.buttonHome);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_UP, wiiOptions.controllers.classic.buttonUp);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_DOWN, wiiOptions.controllers.classic.buttonDown);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_LEFT, wiiOptions.controllers.classic.buttonLeft);
-    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_RIGHT, wiiOptions.controllers.classic.buttonRight);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_A, controllers.classic.buttonA);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_B, controllers.classic.buttonB);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_X, controllers.classic.buttonX);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_Y, controllers.classic.buttonY);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_L, controllers.classic.buttonL);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_ZL, controllers.classic.buttonZL);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_R, controllers.classic.buttonR);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_ZR, controllers.classic.buttonZR);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_MINUS, controllers.classic.buttonMinus);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_PLUS, controllers.classic.buttonPlus);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_HOME, controllers.classic.buttonHome);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_UP, controllers.classic.buttonUp);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_DOWN, controllers.classic.buttonDown);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_LEFT, controllers.classic.buttonLeft);
+    setControllerButton(WII_EXTENSION_CLASSIC, WiiButtons::WII_BUTTON_RIGHT, controllers.classic.buttonRight);
 
-    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_KAT_LEFT, wiiOptions.controllers.taiko.buttonKatLeft);
-    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_KAT_RIGHT, wiiOptions.controllers.taiko.buttonKatRight);
-    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_DON_LEFT, wiiOptions.controllers.taiko.buttonDonLeft);
-    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_DON_RIGHT, wiiOptions.controllers.taiko.buttonDonRight);
+    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_KAT_LEFT, controllers.taiko.buttonKatLeft);
+    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_KAT_RIGHT, controllers.taiko.buttonKatRight);
+    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_DON_LEFT, controllers.taiko.buttonDonLeft);
+    setControllerButton(WII_EXTENSION_TAIKO, TaikoButtons::TATA_DON_RIGHT, controllers.taiko.buttonDonRight);
 
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_RED, wiiOptions.controllers.guitar.buttonRed);
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_GREEN, wiiOptions.controllers.guitar.buttonGreen);
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_YELLOW, wiiOptions.controllers.guitar.buttonYellow);
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_BLUE, wiiOptions.controllers.guitar.buttonBlue);
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_ORANGE, wiiOptions.controllers.guitar.buttonOrange);
-    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_PEDAL, wiiOptions.controllers.guitar.buttonPedal);
-    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_MINUS, wiiOptions.controllers.guitar.buttonMinus);
-    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_PLUS, wiiOptions.controllers.guitar.buttonPlus);
-    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_UP, wiiOptions.controllers.guitar.strumUp);
-    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_DOWN, wiiOptions.controllers.guitar.strumDown);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_RED, controllers.guitar.buttonRed);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_GREEN, controllers.guitar.buttonGreen);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_YELLOW, controllers.guitar.buttonYellow);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_BLUE, controllers.guitar.buttonBlue);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_ORANGE, controllers.guitar.buttonOrange);
+    setControllerButton(WII_EXTENSION_GUITAR, GuitarButtons::GUITAR_PEDAL, controllers.guitar.buttonPedal);
+    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_MINUS, controllers.guitar.buttonMinus);
+    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_PLUS, controllers.guitar.buttonPlus);
+    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_UP, controllers.guitar.strumUp);
+    setControllerButton(WII_EXTENSION_GUITAR, WiiButtons::WII_BUTTON_DOWN, controllers.guitar.strumDown);
 
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_RED, wiiOptions.controllers.drum.buttonRed);
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_GREEN, wiiOptions.controllers.drum.buttonGreen);
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_YELLOW, wiiOptions.controllers.drum.buttonYellow);
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_BLUE, wiiOptions.controllers.drum.buttonBlue);
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_ORANGE, wiiOptions.controllers.drum.buttonOrange);
-    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_PEDAL, wiiOptions.controllers.drum.buttonPedal);
-    setControllerButton(WII_EXTENSION_DRUMS, WiiButtons::WII_BUTTON_MINUS, wiiOptions.controllers.drum.buttonMinus);
-    setControllerButton(WII_EXTENSION_DRUMS, WiiButtons::WII_BUTTON_PLUS, wiiOptions.controllers.drum.buttonPlus);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_RED, controllers.drum.buttonRed);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_GREEN, controllers.drum.buttonGreen);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_YELLOW, controllers.drum.buttonYellow);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_BLUE, controllers.drum.buttonBlue);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_ORANGE, controllers.drum.buttonOrange);
+    setControllerButton(WII_EXTENSION_DRUMS, DrumButtons::DRUM_PEDAL, controllers.drum.buttonPedal);
+    setControllerButton(WII_EXTENSION_DRUMS, WiiButtons::WII_BUTTON_MINUS, controllers.drum.buttonMinus);
+    setControllerButton(WII_EXTENSION_DRUMS, WiiButtons::WII_BUTTON_PLUS, controllers.drum.buttonPlus);
 
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_RED, wiiOptions.controllers.turntable.buttonLeftRed);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_GREEN, wiiOptions.controllers.turntable.buttonLeftGreen);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_BLUE, wiiOptions.controllers.turntable.buttonLeftBlue);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_RED, wiiOptions.controllers.turntable.buttonRightRed);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_GREEN, wiiOptions.controllers.turntable.buttonRightGreen);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_BLUE, wiiOptions.controllers.turntable.buttonRightBlue);
-    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_EUPHORIA, wiiOptions.controllers.turntable.buttonEuphoria);
-    setControllerButton(WII_EXTENSION_TURNTABLE, WiiButtons::WII_BUTTON_MINUS, wiiOptions.controllers.turntable.buttonMinus);
-    setControllerButton(WII_EXTENSION_TURNTABLE, WiiButtons::WII_BUTTON_PLUS, wiiOptions.controllers.turntable.buttonPlus);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_RED, controllers.turntable.buttonLeftRed);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_GREEN, controllers.turntable.buttonLeftGreen);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_LEFT_BLUE, controllers.turntable.buttonLeftBlue);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_RED, controllers.turntable.buttonRightRed);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_GREEN, controllers.turntable.buttonRightGreen);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_RIGHT_BLUE, controllers.turntable.buttonRightBlue);
+    setControllerButton(WII_EXTENSION_TURNTABLE, TurntableButtons::TURNTABLE_EUPHORIA, controllers.turntable.buttonEuphoria);
+    setControllerButton(WII_EXTENSION_TURNTABLE, WiiButtons::WII_BUTTON_MINUS, controllers.turntable.buttonMinus);
+    setControllerButton(WII_EXTENSION_TURNTABLE, WiiButtons::WII_BUTTON_PLUS, controllers.turntable.buttonPlus);
 
     // analog mapping
-    setControllerAnalog(WII_EXTENSION_NUNCHUCK, WiiAnalogs::WII_ANALOG_LEFT_X, wiiOptions.controllers.nunchuk.stick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_NUNCHUCK, WiiAnalogs::WII_ANALOG_LEFT_Y, wiiOptions.controllers.nunchuk.stick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_NUNCHUCK, WiiAnalogs::WII_ANALOG_LEFT_X, controllers.nunchuk.stick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_NUNCHUCK, WiiAnalogs::WII_ANALOG_LEFT_Y, controllers.nunchuk.stick.y.axisType);
 
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_X, wiiOptions.controllers.classic.leftStick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_Y, wiiOptions.controllers.classic.leftStick.y.axisType);
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_X, wiiOptions.controllers.classic.rightStick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_Y, wiiOptions.controllers.classic.rightStick.y.axisType);
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_TRIGGER, wiiOptions.controllers.classic.leftTrigger.axisType);
-    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_TRIGGER, wiiOptions.controllers.classic.rightTrigger.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_X, controllers.classic.leftStick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_Y, controllers.classic.leftStick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_X, controllers.classic.rightStick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_Y, controllers.classic.rightStick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_LEFT_TRIGGER, controllers.classic.leftTrigger.axisType);
+    setControllerAnalog(WII_EXTENSION_CLASSIC, WiiAnalogs::WII_ANALOG_RIGHT_TRIGGER, controllers.classic.rightTrigger.axisType);
 
-    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_LEFT_X, wiiOptions.controllers.guitar.stick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_LEFT_Y, wiiOptions.controllers.guitar.stick.y.axisType);
-    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_RIGHT_X, wiiOptions.controllers.guitar.whammyBar.axisType);
+    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_LEFT_X, controllers.guitar.stick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_LEFT_Y, controllers.guitar.stick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_GUITAR, WiiAnalogs::WII_ANALOG_RIGHT_X, controllers.guitar.whammyBar.axisType);
 
-    setControllerAnalog(WII_EXTENSION_DRUMS, WiiAnalogs::WII_ANALOG_LEFT_X, wiiOptions.controllers.drum.stick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_DRUMS, WiiAnalogs::WII_ANALOG_LEFT_Y, wiiOptions.controllers.drum.stick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_DRUMS, WiiAnalogs::WII_ANALOG_LEFT_X, controllers.drum.stick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_DRUMS, WiiAnalogs::WII_ANALOG_LEFT_Y, controllers.drum.stick.y.axisType);
 
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_X, wiiOptions.controllers.turntable.stick.x.axisType);
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_Y, wiiOptions.controllers.turntable.stick.y.axisType);
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_X, wiiOptions.controllers.turntable.leftTurntable.axisType);
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_Y, wiiOptions.controllers.turntable.rightTurntable.axisType);
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_TRIGGER, wiiOptions.controllers.turntable.effects.axisType);
-    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_TRIGGER, wiiOptions.controllers.turntable.fader.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_X, controllers.turntable.stick.x.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_Y, controllers.turntable.stick.y.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_X, controllers.turntable.leftTurntable.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_Y, controllers.turntable.rightTurntable.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_LEFT_TRIGGER, controllers.turntable.effects.axisType);
+    setControllerAnalog(WII_EXTENSION_TURNTABLE, WiiAnalogs::WII_ANALOG_RIGHT_TRIGGER, controllers.turntable.fader.axisType);
 }
 
 void WiiExtensionInput::setButtonState(bool buttonState, uint16_t buttonMask) {
@@ -391,7 +426,12 @@ void WiiExtensionInput::queueAnalogChange(uint16_t analogInput, uint16_t analogV
 
 void WiiExtensionInput::updateAnalogState() {
     Gamepad * gamepad = Storage::getInstance().GetGamepad();
-    gamepad->hasAnalogTriggers = isAnalogTriggers;
+    // Port 1 runs first each cycle; Port 2 must not clear a value set by Port 1
+    if (portIndex == 0) {
+        gamepad->hasAnalogTriggers = isAnalogTriggers;
+    } else {
+        gamepad->hasAnalogTriggers = gamepad->hasAnalogTriggers || isAnalogTriggers;
+    }
 
     uint16_t joystickMid = GAMEPAD_JOYSTICK_MID;
     if ( DriverManager::getInstance().getDriver() != nullptr ) {
@@ -565,7 +605,28 @@ void WiiExtensionInput::updateAnalogState() {
     }
 }
 
+void WiiExtensionInput::releaseMotionState() {
+    if (motionOwnerPort != portIndex) return;
+
+    Gamepad * gamepad = Storage::getInstance().GetGamepad();
+    gamepad->auxState.sensors.accelerometer.enabled = false;
+    gamepad->auxState.sensors.gyroscope.enabled = false;
+    gamepad->auxState.sensors.touchpad[0].enabled = false;
+    motionOwnerPort = -1;
+}
+
 void WiiExtensionInput::updateMotionState() {
+    const bool hasMotion = isAccelerometer || isGyroscope || isTouch;
+
+    if (!hasMotion) {
+        releaseMotionState();
+        return;
+    }
+
+    // A lower-numbered port that is already reporting motion keeps priority
+    if ((motionOwnerPort > -1) && (motionOwnerPort < portIndex)) return;
+    motionOwnerPort = portIndex;
+
     Gamepad * gamepad = Storage::getInstance().GetGamepad();
 
     gamepad->auxState.sensors.accelerometer.enabled = isAccelerometer;

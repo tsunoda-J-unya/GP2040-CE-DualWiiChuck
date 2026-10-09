@@ -113,7 +113,8 @@ void GP2040::setup() {
 	addons.LoadAddon(new I2CAnalog1115Input());
 	addons.LoadAddon(new I2CAnalog1219Input());
 	addons.LoadAddon(new SPIAnalog1256Input());
-	addons.LoadAddon(new WiiExtensionInput());
+	addons.LoadAddon(new WiiExtensionInput(0)); // Wii Port 1 (I2C0, or I2C1 if it is the only enabled block)
+	addons.LoadAddon(new WiiExtensionInput(1)); // Wii Port 2 (I2C1, only when both blocks are enabled)
 	addons.LoadAddon(new SNESpadInput());
 	addons.LoadAddon(new SliderSOCDInput());
 	addons.LoadAddon(new SliderProfileInput());

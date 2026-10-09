@@ -2,6 +2,10 @@ export default {
 	'header-text': 'Wii Extension',
 	'sub-header-text':
 		'<0>Note: If the display is enabled at the same time, this add-on will be disabled.</0>',
+	'port-1': 'Port 1 (I2C0)',
+	'port-2': 'Port 2 (I2C1)',
+	'port-note':
+		'Each port is fixed to an I2C block. When both I2C0 and I2C1 are enabled, Port 1 uses I2C0 and Port 2 uses I2C1. When only one block is enabled, it uses the Port 1 settings.',
 	'section-digital': 'Digital',
 	'section-analog': 'Analog',
 	'controller-nunchuk': 'Nunchuk',
