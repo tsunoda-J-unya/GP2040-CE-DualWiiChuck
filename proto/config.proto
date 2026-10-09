@@ -765,6 +765,9 @@ message WiiOptions
     optional int32 deprecatedI2cSpeed = 5 [deprecated = true];
 
     optional ControllerOptions controllers = 6;
+    // Mappings for the second Wii extension port. Used only when both I2C
+    // blocks are enabled: I2C0 uses `controllers`, I2C1 uses `controllers2`.
+    optional ControllerOptions controllers2 = 7;
 }
 
 message SNESOptions

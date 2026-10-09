@@ -2416,83 +2416,89 @@ std::string setPS4Options()
     return "{\"success\":true}";
 }
 
+// Every Wii controller mapping exposed to the web configurator.
+// X(field, key) is expanded once per Wii port; P is the JSON key prefix
+// ("" for Port 1, "port2." for Port 2) so all keys stay string literals.
+#define WII_CONTROLLER_FIELDS(X, C, P) \
+    X(C.nunchuk.buttonC, P "nunchuk.buttonC") \
+    X(C.nunchuk.buttonZ, P "nunchuk.buttonZ") \
+    X(C.nunchuk.stick.x.axisType, P "nunchuk.analogStick.x.axisType") \
+    X(C.nunchuk.stick.y.axisType, P "nunchuk.analogStick.y.axisType") \
+    X(C.classic.buttonA, P "classic.buttonA") \
+    X(C.classic.buttonB, P "classic.buttonB") \
+    X(C.classic.buttonX, P "classic.buttonX") \
+    X(C.classic.buttonY, P "classic.buttonY") \
+    X(C.classic.buttonL, P "classic.buttonL") \
+    X(C.classic.buttonZL, P "classic.buttonZL") \
+    X(C.classic.buttonR, P "classic.buttonR") \
+    X(C.classic.buttonZR, P "classic.buttonZR") \
+    X(C.classic.buttonMinus, P "classic.buttonMinus") \
+    X(C.classic.buttonPlus, P "classic.buttonPlus") \
+    X(C.classic.buttonHome, P "classic.buttonHome") \
+    X(C.classic.buttonUp, P "classic.buttonUp") \
+    X(C.classic.buttonDown, P "classic.buttonDown") \
+    X(C.classic.buttonLeft, P "classic.buttonLeft") \
+    X(C.classic.buttonRight, P "classic.buttonRight") \
+    X(C.classic.leftStick.x.axisType, P "classic.analogLeftStick.x.axisType") \
+    X(C.classic.leftStick.y.axisType, P "classic.analogLeftStick.y.axisType") \
+    X(C.classic.rightStick.x.axisType, P "classic.analogRightStick.x.axisType") \
+    X(C.classic.rightStick.y.axisType, P "classic.analogRightStick.y.axisType") \
+    X(C.classic.leftTrigger.axisType, P "classic.analogLeftTrigger.axisType") \
+    X(C.classic.rightTrigger.axisType, P "classic.analogRightTrigger.axisType") \
+    X(C.taiko.buttonKatLeft, P "taiko.buttonKatLeft") \
+    X(C.taiko.buttonKatRight, P "taiko.buttonKatRight") \
+    X(C.taiko.buttonDonLeft, P "taiko.buttonDonLeft") \
+    X(C.taiko.buttonDonRight, P "taiko.buttonDonRight") \
+    X(C.guitar.buttonRed, P "guitar.buttonRed") \
+    X(C.guitar.buttonGreen, P "guitar.buttonGreen") \
+    X(C.guitar.buttonYellow, P "guitar.buttonYellow") \
+    X(C.guitar.buttonBlue, P "guitar.buttonBlue") \
+    X(C.guitar.buttonOrange, P "guitar.buttonOrange") \
+    X(C.guitar.buttonPedal, P "guitar.buttonPedal") \
+    X(C.guitar.buttonMinus, P "guitar.buttonMinus") \
+    X(C.guitar.buttonPlus, P "guitar.buttonPlus") \
+    X(C.guitar.strumUp, P "guitar.buttonStrumUp") \
+    X(C.guitar.strumDown, P "guitar.buttonStrumDown") \
+    X(C.guitar.stick.x.axisType, P "guitar.analogStick.x.axisType") \
+    X(C.guitar.stick.y.axisType, P "guitar.analogStick.y.axisType") \
+    X(C.guitar.whammyBar.axisType, P "guitar.analogWhammyBar.axisType") \
+    X(C.drum.buttonRed, P "drum.buttonRed") \
+    X(C.drum.buttonGreen, P "drum.buttonGreen") \
+    X(C.drum.buttonYellow, P "drum.buttonYellow") \
+    X(C.drum.buttonBlue, P "drum.buttonBlue") \
+    X(C.drum.buttonOrange, P "drum.buttonOrange") \
+    X(C.drum.buttonPedal, P "drum.buttonPedal") \
+    X(C.drum.buttonMinus, P "drum.buttonMinus") \
+    X(C.drum.buttonPlus, P "drum.buttonPlus") \
+    X(C.drum.stick.x.axisType, P "drum.analogStick.x.axisType") \
+    X(C.drum.stick.y.axisType, P "drum.analogStick.y.axisType") \
+    X(C.turntable.buttonLeftRed, P "turntable.buttonLeftRed") \
+    X(C.turntable.buttonLeftGreen, P "turntable.buttonLeftGreen") \
+    X(C.turntable.buttonLeftBlue, P "turntable.buttonLeftBlue") \
+    X(C.turntable.buttonRightRed, P "turntable.buttonRightRed") \
+    X(C.turntable.buttonRightGreen, P "turntable.buttonRightGreen") \
+    X(C.turntable.buttonRightBlue, P "turntable.buttonRightBlue") \
+    X(C.turntable.buttonMinus, P "turntable.buttonMinus") \
+    X(C.turntable.buttonPlus, P "turntable.buttonPlus") \
+    X(C.turntable.buttonEuphoria, P "turntable.buttonEuphoria") \
+    X(C.turntable.stick.x.axisType, P "turntable.analogStick.x.axisType") \
+    X(C.turntable.stick.y.axisType, P "turntable.analogStick.y.axisType") \
+    X(C.turntable.leftTurntable.axisType, P "turntable.analogLeftTurntable.axisType") \
+    X(C.turntable.rightTurntable.axisType, P "turntable.analogRightTurntable.axisType") \
+    X(C.turntable.effects.axisType, P "turntable.analogEffects.axisType") \
+    X(C.turntable.fader.axisType, P "turntable.analogFader.axisType")
+
+#define WII_READ_FIELD(field, key) docToValue(field, doc, key);
+#define WII_WRITE_FIELD(field, key) writeDoc(doc, key, field);
+
 std::string setWiiControls()
 {
     DynamicJsonDocument doc = get_post_data();
     WiiOptions& wiiOptions = Storage::getInstance().getAddonOptions().wiiOptions;
 
-    readDoc(wiiOptions.controllers.nunchuk.buttonC, doc, "nunchuk.buttonC");
-    readDoc(wiiOptions.controllers.nunchuk.buttonZ, doc, "nunchuk.buttonZ");
-    readDoc(wiiOptions.controllers.nunchuk.stick.x.axisType, doc, "nunchuk.analogStick.x.axisType");
-    readDoc(wiiOptions.controllers.nunchuk.stick.y.axisType, doc, "nunchuk.analogStick.y.axisType");
-
-    readDoc(wiiOptions.controllers.classic.buttonA, doc, "classic.buttonA");
-    readDoc(wiiOptions.controllers.classic.buttonB, doc, "classic.buttonB");
-    readDoc(wiiOptions.controllers.classic.buttonX, doc, "classic.buttonX");
-    readDoc(wiiOptions.controllers.classic.buttonY, doc, "classic.buttonY");
-    readDoc(wiiOptions.controllers.classic.buttonL, doc, "classic.buttonL");
-    readDoc(wiiOptions.controllers.classic.buttonZL, doc, "classic.buttonZL");
-    readDoc(wiiOptions.controllers.classic.buttonR, doc, "classic.buttonR");
-    readDoc(wiiOptions.controllers.classic.buttonZR, doc, "classic.buttonZR");
-    readDoc(wiiOptions.controllers.classic.buttonMinus, doc, "classic.buttonMinus");
-    readDoc(wiiOptions.controllers.classic.buttonPlus, doc, "classic.buttonPlus");
-    readDoc(wiiOptions.controllers.classic.buttonHome, doc, "classic.buttonHome");
-    readDoc(wiiOptions.controllers.classic.buttonUp, doc, "classic.buttonUp");
-    readDoc(wiiOptions.controllers.classic.buttonDown, doc, "classic.buttonDown");
-    readDoc(wiiOptions.controllers.classic.buttonLeft, doc, "classic.buttonLeft");
-    readDoc(wiiOptions.controllers.classic.buttonRight, doc, "classic.buttonRight");
-    readDoc(wiiOptions.controllers.classic.leftStick.x.axisType, doc, "classic.analogLeftStick.x.axisType");
-    readDoc(wiiOptions.controllers.classic.leftStick.y.axisType, doc, "classic.analogLeftStick.y.axisType");
-    readDoc(wiiOptions.controllers.classic.rightStick.x.axisType, doc, "classic.analogRightStick.x.axisType");
-    readDoc(wiiOptions.controllers.classic.rightStick.y.axisType, doc, "classic.analogRightStick.y.axisType");
-    readDoc(wiiOptions.controllers.classic.leftTrigger.axisType, doc, "classic.analogLeftTrigger.axisType");
-    readDoc(wiiOptions.controllers.classic.rightTrigger.axisType, doc, "classic.analogRightTrigger.axisType");
-
-    readDoc(wiiOptions.controllers.taiko.buttonKatLeft, doc, "taiko.buttonKatLeft");
-    readDoc(wiiOptions.controllers.taiko.buttonKatRight, doc, "taiko.buttonKatRight");
-    readDoc(wiiOptions.controllers.taiko.buttonDonLeft, doc, "taiko.buttonDonLeft");
-    readDoc(wiiOptions.controllers.taiko.buttonDonRight, doc, "taiko.buttonDonRight");
-
-    readDoc(wiiOptions.controllers.guitar.buttonRed, doc, "guitar.buttonRed");
-    readDoc(wiiOptions.controllers.guitar.buttonGreen, doc, "guitar.buttonGreen");
-    readDoc(wiiOptions.controllers.guitar.buttonYellow, doc, "guitar.buttonYellow");
-    readDoc(wiiOptions.controllers.guitar.buttonBlue, doc, "guitar.buttonBlue");
-    readDoc(wiiOptions.controllers.guitar.buttonOrange, doc, "guitar.buttonOrange");
-    readDoc(wiiOptions.controllers.guitar.buttonPedal, doc, "guitar.buttonPedal");
-    readDoc(wiiOptions.controllers.guitar.buttonMinus, doc, "guitar.buttonMinus");
-    readDoc(wiiOptions.controllers.guitar.buttonPlus, doc, "guitar.buttonPlus");
-    readDoc(wiiOptions.controllers.guitar.strumUp, doc, "guitar.buttonStrumUp");
-    readDoc(wiiOptions.controllers.guitar.strumDown, doc, "guitar.buttonStrumDown");
-    readDoc(wiiOptions.controllers.guitar.stick.x.axisType, doc, "guitar.analogStick.x.axisType");
-    readDoc(wiiOptions.controllers.guitar.stick.y.axisType, doc, "guitar.analogStick.y.axisType");
-    readDoc(wiiOptions.controllers.guitar.whammyBar.axisType, doc, "guitar.analogWhammyBar.axisType");
-
-    readDoc(wiiOptions.controllers.drum.buttonRed, doc, "drum.buttonRed");
-    readDoc(wiiOptions.controllers.drum.buttonGreen, doc, "drum.buttonGreen");
-    readDoc(wiiOptions.controllers.drum.buttonYellow, doc, "drum.buttonYellow");
-    readDoc(wiiOptions.controllers.drum.buttonBlue, doc, "drum.buttonBlue");
-    readDoc(wiiOptions.controllers.drum.buttonOrange, doc, "drum.buttonOrange");
-    readDoc(wiiOptions.controllers.drum.buttonPedal, doc, "drum.buttonPedal");
-    readDoc(wiiOptions.controllers.drum.buttonMinus, doc, "drum.buttonMinus");
-    readDoc(wiiOptions.controllers.drum.buttonPlus, doc, "drum.buttonPlus");
-    readDoc(wiiOptions.controllers.drum.stick.x.axisType, doc, "drum.analogStick.x.axisType");
-    readDoc(wiiOptions.controllers.drum.stick.y.axisType, doc, "drum.analogStick.y.axisType");
-
-    readDoc(wiiOptions.controllers.turntable.buttonLeftRed, doc, "turntable.buttonLeftRed");
-    readDoc(wiiOptions.controllers.turntable.buttonLeftGreen, doc, "turntable.buttonLeftGreen");
-    readDoc(wiiOptions.controllers.turntable.buttonLeftBlue, doc, "turntable.buttonLeftBlue");
-    readDoc(wiiOptions.controllers.turntable.buttonRightRed, doc, "turntable.buttonRightRed");
-    readDoc(wiiOptions.controllers.turntable.buttonRightGreen, doc, "turntable.buttonRightGreen");
-    readDoc(wiiOptions.controllers.turntable.buttonRightBlue, doc, "turntable.buttonRightBlue");
-    readDoc(wiiOptions.controllers.turntable.buttonMinus, doc, "turntable.buttonMinus");
-    readDoc(wiiOptions.controllers.turntable.buttonPlus, doc, "turntable.buttonPlus");
-    readDoc(wiiOptions.controllers.turntable.buttonEuphoria, doc, "turntable.buttonEuphoria");
-    readDoc(wiiOptions.controllers.turntable.stick.x.axisType, doc, "turntable.analogStick.x.axisType");
-    readDoc(wiiOptions.controllers.turntable.stick.y.axisType, doc, "turntable.analogStick.y.axisType");
-    readDoc(wiiOptions.controllers.turntable.leftTurntable.axisType, doc, "turntable.analogLeftTurntable.axisType");
-    readDoc(wiiOptions.controllers.turntable.rightTurntable.axisType, doc, "turntable.analogRightTurntable.axisType");
-    readDoc(wiiOptions.controllers.turntable.effects.axisType, doc, "turntable.analogEffects.axisType");
-    readDoc(wiiOptions.controllers.turntable.fader.axisType, doc, "turntable.analogFader.axisType");
+    // Only keys present in the request are updated
+    WII_CONTROLLER_FIELDS(WII_READ_FIELD, wiiOptions.controllers, "")
+    WII_CONTROLLER_FIELDS(WII_READ_FIELD, wiiOptions.controllers2, "port2.")
 
     EventManager::getInstance().triggerEvent(new GPStorageSaveEvent(true));
 
@@ -2501,85 +2507,19 @@ std::string setWiiControls()
 
 std::string getWiiControls()
 {
-    const size_t capacity = JSON_OBJECT_SIZE(100);
+    const size_t capacity = JSON_OBJECT_SIZE(200) + 4096;
     DynamicJsonDocument doc(capacity);
     WiiOptions& wiiOptions = Storage::getInstance().getAddonOptions().wiiOptions;
 
-    writeDoc(doc, "nunchuk.buttonC", wiiOptions.controllers.nunchuk.buttonC);
-    writeDoc(doc, "nunchuk.buttonZ", wiiOptions.controllers.nunchuk.buttonZ);
-    writeDoc(doc, "nunchuk.analogStick.x.axisType", wiiOptions.controllers.nunchuk.stick.x.axisType);
-    writeDoc(doc, "nunchuk.analogStick.y.axisType", wiiOptions.controllers.nunchuk.stick.y.axisType);
-
-    writeDoc(doc, "classic.buttonA", wiiOptions.controllers.classic.buttonA);
-    writeDoc(doc, "classic.buttonB", wiiOptions.controllers.classic.buttonB);
-    writeDoc(doc, "classic.buttonX", wiiOptions.controllers.classic.buttonX);
-    writeDoc(doc, "classic.buttonY", wiiOptions.controllers.classic.buttonY);
-    writeDoc(doc, "classic.buttonL", wiiOptions.controllers.classic.buttonL);
-    writeDoc(doc, "classic.buttonZL", wiiOptions.controllers.classic.buttonZL);
-    writeDoc(doc, "classic.buttonR", wiiOptions.controllers.classic.buttonR);
-    writeDoc(doc, "classic.buttonZR", wiiOptions.controllers.classic.buttonZR);
-    writeDoc(doc, "classic.buttonMinus", wiiOptions.controllers.classic.buttonMinus);
-    writeDoc(doc, "classic.buttonPlus", wiiOptions.controllers.classic.buttonPlus);
-    writeDoc(doc, "classic.buttonHome", wiiOptions.controllers.classic.buttonHome);
-    writeDoc(doc, "classic.buttonUp", wiiOptions.controllers.classic.buttonUp);
-    writeDoc(doc, "classic.buttonDown", wiiOptions.controllers.classic.buttonDown);
-    writeDoc(doc, "classic.buttonLeft", wiiOptions.controllers.classic.buttonLeft);
-    writeDoc(doc, "classic.buttonRight", wiiOptions.controllers.classic.buttonRight);
-    writeDoc(doc, "classic.analogLeftStick.x.axisType", wiiOptions.controllers.classic.leftStick.x.axisType);
-    writeDoc(doc, "classic.analogLeftStick.y.axisType", wiiOptions.controllers.classic.leftStick.y.axisType);
-    writeDoc(doc, "classic.analogRightStick.x.axisType", wiiOptions.controllers.classic.rightStick.x.axisType);
-    writeDoc(doc, "classic.analogRightStick.y.axisType", wiiOptions.controllers.classic.rightStick.y.axisType);
-    writeDoc(doc, "classic.analogLeftTrigger.axisType", wiiOptions.controllers.classic.leftTrigger.axisType);
-    writeDoc(doc, "classic.analogRightTrigger.axisType", wiiOptions.controllers.classic.rightTrigger.axisType);
-
-    writeDoc(doc, "taiko.buttonKatLeft", wiiOptions.controllers.taiko.buttonKatLeft);
-    writeDoc(doc, "taiko.buttonKatRight", wiiOptions.controllers.taiko.buttonKatRight);
-    writeDoc(doc, "taiko.buttonDonLeft", wiiOptions.controllers.taiko.buttonDonLeft);
-    writeDoc(doc, "taiko.buttonDonRight", wiiOptions.controllers.taiko.buttonDonRight);
-
-    writeDoc(doc, "guitar.buttonRed", wiiOptions.controllers.guitar.buttonRed);
-    writeDoc(doc, "guitar.buttonGreen", wiiOptions.controllers.guitar.buttonGreen);
-    writeDoc(doc, "guitar.buttonYellow", wiiOptions.controllers.guitar.buttonYellow);
-    writeDoc(doc, "guitar.buttonBlue", wiiOptions.controllers.guitar.buttonBlue);
-    writeDoc(doc, "guitar.buttonOrange", wiiOptions.controllers.guitar.buttonOrange);
-    writeDoc(doc, "guitar.buttonPedal", wiiOptions.controllers.guitar.buttonPedal);
-    writeDoc(doc, "guitar.buttonMinus", wiiOptions.controllers.guitar.buttonMinus);
-    writeDoc(doc, "guitar.buttonPlus", wiiOptions.controllers.guitar.buttonPlus);
-    writeDoc(doc, "guitar.buttonStrumUp", wiiOptions.controllers.guitar.strumUp);
-    writeDoc(doc, "guitar.buttonStrumDown", wiiOptions.controllers.guitar.strumDown);
-    writeDoc(doc, "guitar.analogStick.x.axisType", wiiOptions.controllers.guitar.stick.x.axisType);
-    writeDoc(doc, "guitar.analogStick.y.axisType", wiiOptions.controllers.guitar.stick.y.axisType);
-    writeDoc(doc, "guitar.analogWhammyBar.axisType", wiiOptions.controllers.guitar.whammyBar.axisType);
-
-    writeDoc(doc, "drum.buttonRed", wiiOptions.controllers.drum.buttonRed);
-    writeDoc(doc, "drum.buttonGreen", wiiOptions.controllers.drum.buttonGreen);
-    writeDoc(doc, "drum.buttonYellow", wiiOptions.controllers.drum.buttonYellow);
-    writeDoc(doc, "drum.buttonBlue", wiiOptions.controllers.drum.buttonBlue);
-    writeDoc(doc, "drum.buttonOrange", wiiOptions.controllers.drum.buttonOrange);
-    writeDoc(doc, "drum.buttonPedal", wiiOptions.controllers.drum.buttonPedal);
-    writeDoc(doc, "drum.buttonMinus", wiiOptions.controllers.drum.buttonMinus);
-    writeDoc(doc, "drum.buttonPlus", wiiOptions.controllers.drum.buttonPlus);
-    writeDoc(doc, "drum.analogStick.x.axisType", wiiOptions.controllers.drum.stick.x.axisType);
-    writeDoc(doc, "drum.analogStick.y.axisType", wiiOptions.controllers.drum.stick.y.axisType);
-
-    writeDoc(doc, "turntable.buttonLeftRed", wiiOptions.controllers.turntable.buttonLeftRed);
-    writeDoc(doc, "turntable.buttonLeftGreen", wiiOptions.controllers.turntable.buttonLeftGreen);
-    writeDoc(doc, "turntable.buttonLeftBlue", wiiOptions.controllers.turntable.buttonLeftBlue);
-    writeDoc(doc, "turntable.buttonRightRed", wiiOptions.controllers.turntable.buttonRightRed);
-    writeDoc(doc, "turntable.buttonRightGreen", wiiOptions.controllers.turntable.buttonRightGreen);
-    writeDoc(doc, "turntable.buttonRightBlue", wiiOptions.controllers.turntable.buttonRightBlue);
-    writeDoc(doc, "turntable.buttonMinus", wiiOptions.controllers.turntable.buttonMinus);
-    writeDoc(doc, "turntable.buttonPlus", wiiOptions.controllers.turntable.buttonPlus);
-    writeDoc(doc, "turntable.buttonEuphoria", wiiOptions.controllers.turntable.buttonEuphoria);
-    writeDoc(doc, "turntable.analogStick.x.axisType", wiiOptions.controllers.turntable.stick.x.axisType);
-    writeDoc(doc, "turntable.analogStick.x.axisType", wiiOptions.controllers.turntable.stick.y.axisType);
-    writeDoc(doc, "turntable.analogLeftTurntable.axisType", wiiOptions.controllers.turntable.leftTurntable.axisType);
-    writeDoc(doc, "turntable.analogRightTurntable.axisType", wiiOptions.controllers.turntable.rightTurntable.axisType);
-    writeDoc(doc, "turntable.analogEffects.axisType", wiiOptions.controllers.turntable.effects.axisType);
-    writeDoc(doc, "turntable.analogFader.axisType", wiiOptions.controllers.turntable.fader.axisType);
+    WII_CONTROLLER_FIELDS(WII_WRITE_FIELD, wiiOptions.controllers, "")
+    WII_CONTROLLER_FIELDS(WII_WRITE_FIELD, wiiOptions.controllers2, "port2.")
 
     return serialize_json(doc);
 }
+
+#undef WII_READ_FIELD
+#undef WII_WRITE_FIELD
+#undef WII_CONTROLLER_FIELDS
 
 std::string getAddonOptions()
 {

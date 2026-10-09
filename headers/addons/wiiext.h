@@ -17,6 +17,36 @@
 
 // WiiExtension Module Name
 #define WiiExtensionName "WiiExtension"
+#define WiiExtensionPort2Name "WiiExtension2"
+
+// Dual port support
+// Port 1 binds to the first enabled I2C block (I2C0, or I2C1 if it is the only one enabled).
+// Port 2 binds to I2C1 and is only active when both I2C blocks are enabled.
+// The port -> block binding depends only on configuration, never on detection order,
+// so the two controllers can never swap roles across reboots or hot-plugging.
+#define WII_EXTENSION_PORT_COUNT 2
+
+// How often an empty port is re-probed for a newly connected controller
+#ifndef WII_EXTENSION_RETRY_MS
+#define WII_EXTENSION_RETRY_MS 1000
+#endif
+
+// Default Nunchuk mappings (applied only when no saved setting exists)
+#ifndef WII_EXTENSION_PORT1_NUNCHUK_BUTTON_C
+#define WII_EXTENSION_PORT1_NUNCHUK_BUTTON_C GAMEPAD_MASK_S2
+#endif
+
+#ifndef WII_EXTENSION_PORT1_NUNCHUK_BUTTON_Z
+#define WII_EXTENSION_PORT1_NUNCHUK_BUTTON_Z GAMEPAD_MASK_S1
+#endif
+
+#ifndef WII_EXTENSION_PORT2_NUNCHUK_BUTTON_C
+#define WII_EXTENSION_PORT2_NUNCHUK_BUTTON_C GAMEPAD_MASK_B2
+#endif
+
+#ifndef WII_EXTENSION_PORT2_NUNCHUK_BUTTON_Z
+#define WII_EXTENSION_PORT2_NUNCHUK_BUTTON_Z GAMEPAD_MASK_B1
+#endif
 
 #ifndef WII_EXTENSION_ENABLED
 #define WII_EXTENSION_ENABLED 0
@@ -61,6 +91,23 @@ typedef enum {
     WII_ANALOG_TYPE_COUNT
 } WiiAnalogType;
 
+// Default Nunchuk stick mappings: Port 1 -> left analog, Port 2 -> right analog
+#ifndef WII_EXTENSION_PORT1_NUNCHUK_STICK_X
+#define WII_EXTENSION_PORT1_NUNCHUK_STICK_X WII_ANALOG_TYPE_LEFT_STICK_X
+#endif
+
+#ifndef WII_EXTENSION_PORT1_NUNCHUK_STICK_Y
+#define WII_EXTENSION_PORT1_NUNCHUK_STICK_Y WII_ANALOG_TYPE_LEFT_STICK_Y
+#endif
+
+#ifndef WII_EXTENSION_PORT2_NUNCHUK_STICK_X
+#define WII_EXTENSION_PORT2_NUNCHUK_STICK_X WII_ANALOG_TYPE_RIGHT_STICK_X
+#endif
+
+#ifndef WII_EXTENSION_PORT2_NUNCHUK_STICK_Y
+#define WII_EXTENSION_PORT2_NUNCHUK_STICK_Y WII_ANALOG_TYPE_RIGHT_STICK_Y
+#endif
+
 typedef struct {
     uint16_t axisType;
     uint16_t minRange;
@@ -80,17 +127,31 @@ typedef struct {
 
 class WiiExtensionInput : public GPAddon {
 public:
+    // port: 0 = Port 1, 1 = Port 2
+    explicit WiiExtensionInput(uint8_t port = 0) : portIndex(port) {}
     virtual bool available();
     virtual void setup();       // WiiExtension Setup
     virtual void process();     // WiiExtension Process
     virtual void preprocess() {}
     virtual void postprocess(bool sent) {}
     virtual void reinit() {}
-    virtual std::string name() { return WiiExtensionName; }
+    virtual std::string name() { return (portIndex == 0) ? WiiExtensionName : WiiExtensionPort2Name; }
 private:
-    WiiExtensionDevice * wii;
+    WiiExtensionDevice * wii = nullptr;
+    uint8_t portIndex = 0;
+    uint8_t i2cBlock = 0;
     uint32_t uIntervalMS;
     uint32_t nextTimer;
+    uint32_t nextRetry = 0;
+    uint32_t lastPollMs = 0;
+
+    // Number of Wii ports that passed available(); used to interleave polling
+    static uint8_t activePortCount;
+
+    // Only one port can feed the shared motion sensor state at a time.
+    // The lowest-numbered port that currently reports motion data wins.
+    static int8_t motionOwnerPort;
+    void releaseMotionState();
 
     // controller ID = config
     // defaults if no defined config

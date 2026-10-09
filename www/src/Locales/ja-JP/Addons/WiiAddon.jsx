@@ -2,6 +2,10 @@ export default {
 	'header-text': 'Wii拡張機能',
 	'sub-header-text':
 		'<0>注：ディスプレイが有効な場合このAdd-onは無効化されます</0>',
+	'port-1': 'ポート1 (I2C0)',
+	'port-2': 'ポート2 (I2C1)',
+	'port-note':
+		'各ポートはI2Cブロックに固定で割り当てられます。I2C0とI2C1の両方が有効な場合、ポート1はI2C0、ポート2はI2C1を使用します。片方のみ有効な場合は、そのブロックがポート1の設定を使用します。',
 	'section-digital': 'デジタル',
 	'section-analog': 'アナログ',
 	'controller-nunchuk': 'ヌンチャク',
